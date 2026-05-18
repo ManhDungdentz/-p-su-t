@@ -48,26 +48,21 @@ def process_data(file):
         df = df.dropna(subset=['Thời gian']).sort_values('Thời gian')
     else: return pd.DataFrame()
     
-    # Gộp cột Nhiệt độ & Độ ẩm từ các trạm khác nhau
     temp_cols = [c for c in ['Nhiệt Độ', 'tempKK'] if c in df.columns]
     if temp_cols: df['temp'] = df[temp_cols].bfill(axis=1).iloc[:, 0]
         
     humi_cols = [c for c in ['Độ ẩm', 'humiKK'] if c in df.columns]
     if humi_cols: df['humi'] = df[humi_cols].bfill(axis=1).iloc[:, 0]
         
-    # Làm sạch số liệu
     for col in ['temp', 'humi']:
         if col in df.columns:
-            # Trích xuất số từ chuỗi
             df[col] = pd.to_numeric(df[col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce')
-            # Fix lỗi số liệu nhân 10 (335 -> 33.5)
             df.loc[df[col] > 100, col] = df[col] / 10
 
-    # 🔥 QUAN TRỌNG: Lọc bỏ hoàn toàn các dòng có độ ẩm = 0 (Lỗi cảm biến)
+    # Lọc bỏ hoàn toàn các dòng có độ ẩm = 0 (Lỗi cảm biến) ngay từ đầu
     if 'humi' in df.columns:
         df = df[df['humi'] > 0].copy()
 
-    # Tính VPD cho những dòng dữ liệu sạch
     if 'temp' in df.columns and 'humi' in df.columns:
         df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
     
@@ -112,23 +107,22 @@ if uploaded_file:
 
         view_opt = st.sidebar.selectbox("📊 Gộp dữ liệu biểu đồ:", ["Gốc (Từng phút)", "Giờ", "Ngày"])
 
-        # --- HIỂN THỊ ---
+        # --- HIỂN THỊ CHÍNH ---
         if not df_filtered.empty:
-            # Lấy dòng cuối cùng có dữ liệu VPD (đã được lọc bỏ các số 0)
             df_valid = df_filtered.dropna(subset=['VPD'])
             
             if not df_valid.empty:
                 last = df_valid.iloc[-1]
                 status, advice, color = get_greenhouse_advice(last['VPD'], growth_stage)
                 
-                st.subheader(f"📍 Trạng thái vận hành thực tế (Bỏ qua cảm biến lỗi)")
+                st.subheader(f"📍 Trạng thái vận hành hiện tại")
                 col1, col2, col3 = st.columns([1, 1, 2])
                 col1.metric("Nhiệt độ", f"{last['temp']} °C")
                 col1.metric("Độ ẩm", f"{last['humi']} %")
                 col2.markdown(f"<div style='padding:15px; border-radius:10px; background-color:{color}; color:white; text-align:center; font-size:20px;'><b>VPD: {last['VPD']} kPa</b><br><small>{status}</small></div>", unsafe_allow_html=True)
                 col3.info(f"**Khuyến nghị thiết bị:** {advice}")
 
-                # Vẽ biểu đồ
+                # Biểu đồ
                 freq_map = {"Giờ": "1h", "Ngày": "1d", "Gốc (Từng phút)": None}
                 freq = freq_map[view_opt]
                 df_plot = df_filtered.set_index('Thời gian').resample(freq).mean(numeric_only=True).reset_index() if freq else df_filtered
@@ -136,7 +130,6 @@ if uploaded_file:
                 st.markdown("---")
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Diễn biến VPD (kPa)", "Biến động Nhiệt & Ẩm"), vertical_spacing=0.1)
                 
-                # Vùng lý tưởng theo giai đoạn
                 if "Cây con" in growth_stage: y_min, y_max = 0.4, 0.8
                 elif "Sinh trưởng" in growth_stage: y_min, y_max = 0.8, 1.2
                 else: y_min, y_max = 1.2, 1.5
@@ -146,14 +139,30 @@ if uploaded_file:
                 
                 fig.add_trace(go.Scatter(x=df_plot['Thời gian'], y=df_plot['temp'], name="Nhiệt độ (°C)"), row=2, col=1)
                 fig.add_trace(go.Scatter(x=df_plot['Thời gian'], y=df_plot['humi'], name="Độ ẩm (%)"), row=2, col=1)
-                
-                fig.update_layout(height=550, hovermode="x unified")
+                fig.update_layout(height=500, hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
+
+                # --- BẢNG THÔNG SỐ CHI TIẾT (ĐÃ LÔI RA NGOÀI) ---
+                st.markdown("---")
+                st.subheader("📋 Bảng Thông Số Chi Tiết")
+                
+                # Thêm bảng tóm tắt nhanh
+                st.markdown("**Tóm tắt trong khoảng đã chọn:**")
+                summary_df = df_filtered[['temp', 'humi', 'VPD']].agg(['max', 'min', 'mean']).round(2)
+                summary_df.index = ['Cao nhất', 'Thấp nhất', 'Trung bình']
+                summary_df.columns = ['Nhiệt độ (°C)', 'Độ ẩm (%)', 'VPD (kPa)']
+                st.table(summary_df)
+
+                st.markdown("**Dữ liệu chi tiết từng bản ghi:**")
+                # Hiển thị dataframe gốc (đã lọc lỗi)
+                display_cols = ['Thời gian', 'STT', 'temp', 'humi', 'VPD']
+                # Chỉ lấy những cột tồn tại trong df
+                actual_cols = [c for c in display_cols if c in df_filtered.columns]
+                st.dataframe(df_filtered[actual_cols].sort_values('Thời gian', ascending=False), use_container_width=True)
+                
             else:
-                st.warning("⚠️ Không có dữ liệu hợp lệ (Cảm biến có thể đang lỗi 0%).")
+                st.warning("⚠️ Không có dữ liệu hợp lệ (Tất cả cảm biến đang báo 0% hoặc lỗi).")
         else:
-            st.warning("Không có dữ liệu trong khoảng thời gian này.")
-    else:
-        st.error("Lỗi đọc file JSON.")
+            st.warning("Không có dữ liệu trong khoảng thời gian đã chọn.")
 else:
-    st.info("👈 Tải file JSON lên để bắt đầu giám sát.")
+    st.info("👈 Vui lòng tải file JSON lên để xem bảng thông số chi tiết.")
