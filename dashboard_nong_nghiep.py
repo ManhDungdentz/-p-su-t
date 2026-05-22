@@ -7,11 +7,10 @@ from datetime import timedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import urllib.parse
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="VPD Greenhouse Pro", layout="wide")
-st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Bản Full Laptop & QR)")
+st.set_page_config(page_title="Greenhouse Monitoring System", layout="wide")
+st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Bản Chuẩn)")
 
 # --- HÀM TÍNH VPD ---
 def calculate_vpd(temp, humi):
@@ -25,17 +24,18 @@ def get_greenhouse_advice(vpd, stage):
     if "Cây con" in stage: i_min, i_max = 0.4, 0.8
     elif "Sinh trưởng" in stage: i_min, i_max = 0.8, 1.2
     else: i_min, i_max = 1.2, 1.5
-    if vpd < i_min - 0.2: return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
+    
+    if vpd < i_min - 0.2: return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh cao!", "#FF4B4B"
     if i_min <= vpd <= i_max: return "🟢 LÝ TƯỞNG", "Cây phát triển tốt.", "#00C851"
     if vpd > i_max + 0.3: return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
-    return "🟡 HƠI LỆCH", "Cần điều chỉnh nhẹ.", "#FFA500"
+    return "🟡 HƠI LỆCH", "Cần điều chỉnh nhẹ thiết bị.", "#FFA500"
 
 # --- HÀM GỬI EMAIL ---
 def send_email_alert(sender_mail, app_password, receiver_mail, vpd, status, temp, humi):
     try:
         msg = MIMEMultipart()
-        msg['Subject'] = f"🚨 CANH BAO VPD: {status}"
-        body = f"📍 TRANG THAI: {status}\nVPD: {vpd} kPa\nNhiet do: {temp}C\nDo am: {humi}%\nKiem tra ngay!"
+        msg['Subject'] = f"🚨 CẢNH BÁO NHÀ KÍNH: {status}"
+        body = f"📍 Trạng thái: {status}\nVPD: {vpd} kPa\nNhiệt độ: {temp}°C\nĐộ ẩm: {humi}%\n\nKiểm tra hệ thống ngay!"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -50,10 +50,11 @@ def process_data(file):
     try:
         df = pd.read_json(file)
     except: return pd.DataFrame()
+    
     if 'Thời gian' in df.columns:
         df['Thời gian'] = pd.to_datetime(df['Thời gian'].astype(str).str.replace('-', ' ', n=2).str.replace('-', ':'), errors='coerce', utc=True).dt.tz_localize(None)
     
-    # Ưu tiên lấy cột KK (Không khí)
+    # Ưu tiên lấy cột KK
     t_cols = [c for c in ['tempKK', 'Nhiệt Độ'] if c in df.columns]
     if t_cols: df['temp'] = df[t_cols].bfill(axis=1).iloc[:, 0]
     h_cols = [c for c in ['humiKK', 'Độ ẩm'] if c in df.columns]
@@ -72,21 +73,21 @@ def process_data(file):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Cấu hình")
+    st.header("⚙️ Cấu hình Email")
     u_mail = st.text_input("Gmail gửi:")
     u_pass = st.text_input("Mật khẩu ứng dụng:", type="password")
     t_mail = st.text_input("Gmail nhận:")
-    target_phone = st.text_input("Số điện thoại nhận SMS:", value="0359029742") #
     st.divider()
-    uploaded_file = st.file_uploader("Tải file JSON", type=['json'])
+    uploaded_file = st.file_uploader("📁 Tải file JSON quan trắc", type=['json'])
 
+# --- HIỂN THỊ DỮ LIỆU ---
 if uploaded_file:
     df = process_data(uploaded_file)
     if not df.empty:
-        # Lọc dữ liệu
+        # Bộ lọc Sidebar
         st.sidebar.header("🔍 Bộ lọc")
         df['Tháng'] = df['Thời gian'].dt.strftime('%m/%Y')
-        filter_mode = st.sidebar.radio("Chế độ:", ["Tất cả", "Tháng", "Khoảng ngày"])
+        filter_mode = st.sidebar.radio("Lọc theo:", ["Tất cả", "Tháng", "Khoảng ngày"])
         
         if filter_mode == "Tháng":
             sel_m = st.sidebar.multiselect("Chọn tháng:", df['Tháng'].unique(), default=df['Tháng'].unique()[-1:])
@@ -108,48 +109,41 @@ if uploaded_file:
             last = df_valid.iloc[-1]
             status, advice, color = get_greenhouse_advice(last['VPD'], stage)
             
-            # 1. Metric hiện tại
+            # Dashboard Metrics
             st.subheader("📍 Chỉ số hiện tại")
             m1, m2, m3 = st.columns([1, 1.2, 1.8])
             m1.metric("Nhiệt độ", f"{round(last['temp'], 1)} °C")
             m1.metric("Độ ẩm", f"{round(last['humi'], 1)} %")
+            
             html_box = f'<div style="background-color:{color}; padding:15px; border-radius:10px; color:white; text-align:center;"><h3 style="margin:0;">VPD: {last["VPD"]} kPa</h3><b>{status}</b></div>'
             m2.markdown(html_box, unsafe_allow_html=True)
             m3.warning(f"**Chỉ đạo:** {advice}")
 
-            # 2. Gửi cảnh báo (QR & Nút bấm)
             if "🔴" in status:
-                st.divider()
-                st.subheader("📲 Gửi cảnh báo SMS")
-                sms_body = f"CANH BAO VPD: {status}. VPD: {last['VPD']} kPa, T: {last['temp']}C, H: {last['humi']}%."
-                sms_link = f"sms:{target_phone}?body={urllib.parse.quote(sms_body)}"
-                
-                qr_col, btn_col = st.columns(2)
-                with qr_col:
-                    st.write("**Dùng Laptop?** Quét mã QR bằng điện thoại:")
-                    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={urllib.parse.quote(sms_link)}"
-                    st.image(qr_url)
-                with btn_col:
-                    st.write("**Dùng Điện thoại?** Bấm nút dưới:")
-                    if st.button("📧 Gửi Gmail"):
-                        if send_email_alert(u_mail, u_pass, t_mail, last['VPD'], status, last['temp'], last['humi']): st.success("Đã gửi Gmail!")
-                    st.markdown(f'<a href="{sms_link}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📱 MỞ TIN NHẮN SMS</div></a>', unsafe_allow_html=True)
+                if st.button("📧 Gửi Email Cảnh Báo Ngay"):
+                    if send_email_alert(u_mail, u_pass, t_mail, last['VPD'], status, last['temp'], last['humi']):
+                        st.success("✅ Đã gửi Email thành công!")
+                    else: st.error("❌ Lỗi gửi Email!")
 
-            # 3. Biểu đồ
+            # Biểu đồ
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1)
             fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['VPD'], name="VPD (kPa)", line=dict(color='green')), 1, 1)
             fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['temp'], name="Nhiệt độ (°C)"), 2, 1)
             fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['humi'], name="Độ ẩm (%)"), 2, 1)
             st.plotly_chart(fig, use_container_width=True)
 
-            # 4. Thống kê Max/Min/Mean
-            st.subheader("📊 Thống kê chỉ số")
+            # Thống kê
+            st.subheader("📊 Thống kê chỉ số (Max, Min, Mean)")
             st.table(df_valid[['temp', 'humi', 'VPD']].agg(['max', 'min', 'mean']).round(2))
 
-            # 5. Bảng nhuộm màu
+            # Bảng chi tiết nhuộm màu
             st.subheader("📋 Chi tiết bản ghi")
-            def style_row(row):
+            def style_critical(row):
                 if row['VPD'] > 1.5 or row['VPD'] < 0.4:
                     return ['background-color: #FFC7CE; color: #9C0006; font-weight: bold'] * len(row)
                 return [''] * len(row)
-            st.dataframe(df_valid[['Thời gian', 'STT', 'temp', 'humi', 'VPD']].sort_values('Thời gian', ascending=False).style.apply(style_row, axis=1), use_container_width=True)
+
+            st.dataframe(
+                df_valid[['Thời gian', 'STT', 'temp', 'humi', 'VPD']]
+                .sort_values('Thời gian', ascending=False)
+                .style.
