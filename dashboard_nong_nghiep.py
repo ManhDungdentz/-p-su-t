@@ -61,10 +61,13 @@ def process_data(file):
     if 'Thời gian' in df.columns:
         df['Thời gian'] = pd.to_datetime(df['Thời gian'].astype(str).str.replace('-', ' ', n=2).str.replace('-', ':'), errors='coerce', utc=True).dt.tz_localize(None)
         df = df.dropna(subset=['Thời gian']).sort_values('Thời gian')
-    t_cols = [c for c in ['Nhiệt Độ', 'tempKK'] if c in df.columns]
+    
+    # Ưu tiên lấy cột KK (Không khí)
+    t_cols = [c for c in ['tempKK', 'Nhiệt Độ'] if c in df.columns]
     if t_cols: df['temp'] = df[t_cols].bfill(axis=1).iloc[:, 0]
-    h_cols = [c for c in ['Độ ẩm', 'humiKK'] if c in df.columns]
+    h_cols = [c for c in ['humiKK', 'Độ ẩm'] if c in df.columns]
     if h_cols: df['humi'] = df[h_cols].bfill(axis=1).iloc[:, 0]
+    
     for col in ['temp', 'humi']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce')
@@ -74,6 +77,7 @@ def process_data(file):
                 df.loc[(df[col] < 5) | (df[col] > 55), col] = np.nan 
             if col == 'humi':
                 df.loc[(df[col] < 20) | (df[col] > 100), col] = np.nan 
+    
     df = df.dropna(subset=['temp', 'humi']).copy()
     if not df.empty: df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
     return df
@@ -90,7 +94,6 @@ with st.sidebar:
 if uploaded_file:
     df = process_data(uploaded_file)
     if not df.empty:
-        # --- ĐÂY LÀ PHẦN CHỌN THỜI GIAN ÔNG TÌM ---
         st.sidebar.header("🔍 Lọc dữ liệu")
         df['Tháng'] = df['Thời gian'].dt.strftime('%m/%Y')
         
@@ -124,7 +127,6 @@ if uploaded_file:
             m1.metric("Nhiệt độ", f"{round(last['temp'], 1)} °C")
             m1.metric("Độ ẩm", f"{round(last['humi'], 1)} %")
             
-            # Cục thông báo VPD (đã thu nhỏ bớt padding)
             html_box = f'<div style="background-color:{color}; padding:15px; border-radius:10px; color:white; text-align:center;"><h3 style="margin:0;">VPD: {last["VPD"]} kPa</h3><b>{status}</b></div>'
             m2.markdown(html_box, unsafe_allow_html=True)
             m3.warning(f"**Chỉ đạo:** {advice}")
@@ -142,10 +144,25 @@ if uploaded_file:
             fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['humi'], name="Độ ẩm (%)"), row=2, col=1)
             st.plotly_chart(fig, use_container_width=True)
 
-            # THỐNG KÊ
-            st.subheader("📋 Thống kê chi tiết")
+            # THỐNG KÊ & BẢNG DỮ LIỆU (PHẦN TÔ MÀU MỚI)
+            st.subheader("📋 Chi tiết bản ghi")
+            
+            # Hàm tô màu: nền đỏ nhạt, chữ đỏ đậm cho VPD nguy hiểm
+            def style_critical_vpd(row):
+                v = row['VPD']
+                # Ngưỡng nguy hiểm tùy giai đoạn, ở đây dùng mặc định > 1.5 hoặc < 0.4
+                if v > 1.5 or v < 0.4:
+                    return ['background-color: #FFC7CE; color: #9C0006; font-weight: bold'] * len(row)
+                return [''] * len(row)
+
             st.table(df_valid[['temp', 'humi', 'VPD']].agg(['max', 'min', 'mean']).round(2))
-            st.dataframe(df_valid[['Thời gian', 'STT', 'temp', 'humi', 'VPD']].sort_values('Thời gian', ascending=False), use_container_width=True)
+            
+            st.dataframe(
+                df_valid[['Thời gian', 'STT', 'temp', 'humi', 'VPD']]
+                .sort_values('Thời gian', ascending=False)
+                .style.apply(style_critical_vpd, axis=1), 
+                use_container_width=True
+            )
         else:
             st.error("🚨 Không tìm thấy dữ liệu trong khoảng thời gian/trạm đã chọn.")
 else:
