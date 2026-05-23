@@ -78,6 +78,14 @@ def process_data(file):
             if col == 'humi':
                 df.loc[(df[col] < 20) | (df[col] > 100), col] = np.nan 
     df = df.dropna(subset=['temp', 'humi']).copy()
+    
+    # --- FIX LỖI "LÊN CAO ĐỘT NGỘT" ---
+    # Đập phẳng các gai nhiễu nhảy vọt mà không làm hỏng dữ liệu chuẩn xung quanh
+    if len(df) > 2:
+        df['temp'] = df['temp'].rolling(window=3, center=True, min_periods=1).median()
+        df['humi'] = df['humi'].rolling(window=3, center=True, min_periods=1).median()
+    # -----------------------------------
+    
     if not df.empty: df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
     return df
 
@@ -167,4 +175,4 @@ if uploaded_file:
         else:
             st.error("🚨 Không tìm thấy dữ liệu trong khoảng thời gian/trạm đã chọn.")
 else:
-    st.info("👈 Hãy nhập Gmail và tải file JSON ở thanh bên trái.") 
+    st.info("👈 Hãy nhập Gmail và tải file JSON ở thanh bên trái.")
