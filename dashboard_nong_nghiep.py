@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Greenhouse Pro Max", layout="wide")
-st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Đã Fix Lỗi Hoàn Toàn)")
+st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Bản Vẽ Siêu Mượt)")
 
 # --- HÀM GỬI EMAIL ---
 def send_email_alert(sender_mail, app_password, receiver_mail, vpd, status, temp, humi):
@@ -75,23 +75,23 @@ def process_data(file):
             
             if col == 'temp':
                 df.loc[df[col] > 150, col] = df[col] / 10 
-                # ĐÂY RỒI: Dòng code sinh tử chuyển độ F sang độ C đã được trả lại!
+                # Chuyển độ F sang độ C để số liệu nhỏ lại bình thường
                 df.loc[(df[col] >= 45) & (df[col] <= 120), col] = (df[col] - 32) * 5/9 
     
     df = df.dropna(subset=['temp', 'humi']).copy()
     
-    # --- CÁCH KHỬ NHIỄU MỚI (KHÔNG XÓA DỮ LIỆU) ---
-    # Nếu nhiệt độ giật cục > 8 độ, đổi thành NaN rồi lấy số liền trước đắp vào
+    # --- KHỬ NHIỄU KHÔNG XÓA DỮ LIỆU ---
+    # Nhiệt độ nhảy vọt > 8 độ thì lấp bằng số của giây trước đó, chống gai nhọn
     if len(df) > 1:
         diff_temp = df['temp'].diff().abs()
         df.loc[diff_temp > 8, 'temp'] = np.nan
-        df['temp'] = df['temp'].ffill() # Kỹ thuật lấp chỗ trống thông minh
+        df['temp'] = df['temp'].ffill() 
         
     if not df.empty: 
         df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
     return df
 
-# --- THANH BÊN (SIDEBAR) ---
+# --- THANH BÊN ---
 with st.sidebar:
     st.header("📧 Cấu hình")
     u_mail = st.text_input("Gmail gửi:")
@@ -123,7 +123,6 @@ if uploaded_file:
         sel_stt = st.sidebar.selectbox("📍 Chọn Trạm:", stt_list)
         if sel_stt != "Tất cả": df_work = df_work[df_work['STT'] == sel_stt]
 
-        # --- HIỂN THỊ CHỈ SỐ ---
         df_valid = df_work.dropna(subset=['VPD'])
         if not df_valid.empty:
             last = df_valid.iloc[-1]
@@ -143,25 +142,24 @@ if uploaded_file:
             
             st.info(f"**Chỉ đạo chuyên gia:** {advice}")
 
-            if st.button("📧 Gửi Email Báo Cáo"):
+            if st.button("📧 Gửi Email Cảnh Báo Khẩn"):
                 if send_email_alert(u_mail, u_pass, t_mail, last['VPD'], status, last['temp'], last['humi']):
                     st.success("✅ Đã gửi!")
                 else: st.error("❌ Lỗi cấu hình Gmail!")
 
-            # BIỂU ĐỒ MƯỢT MÀ KHÔNG CỘT ĐÌNH
+            # --- BIỂU ĐỒ SIÊU MƯỢT (line_shape='spline') ---
             st.subheader("📊 Biểu đồ diễn biến")
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1)
-            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['VPD'], name="VPD (kPa)", line=dict(color='green', width=3)), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['temp'], name="Nhiệt độ (°C)"), row=2, col=1)
-            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['humi'], name="Độ ẩm (%)"), row=2, col=1)
+            # Dùng line_shape='spline' để uốn cong mượt mà như nét vẽ tay
+            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['VPD'], name="VPD (kPa)", line=dict(color='green', width=3, shape='spline')), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['temp'], name="Nhiệt độ (°C)", line=dict(shape='spline')), row=2, col=1)
+            fig.add_trace(go.Scatter(x=df_valid['Thời gian'], y=df_valid['humi'], name="Độ ẩm (%)", line=dict(shape='spline')), row=2, col=1)
             fig.update_layout(height=500, margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig, use_container_width=True)
 
-            # THỐNG KÊ
             st.subheader("📋 Thống kê")
             st.table(df_valid[['temp', 'humi', 'VPD']].agg(['max', 'min', 'mean']).round(2))
             
-            # BẢNG DỮ LIỆU NHUỘM MÀU
             def highlight_alert(row):
                 if "Cây con" in stage: i_min, i_max = 0.4, 0.8
                 elif "Sinh trưởng" in stage: i_min, i_max = 0.8, 1.2
