@@ -10,7 +10,7 @@ from email.mime.multipart import MIMEMultipart
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Greenhouse Pro Max", layout="wide")
-st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Đã nhả bộ lọc)")
+st.title("🌿 Hệ Thống Giám Sát Nhà Kính (Bản Chuẩn - Cắt Lọc Lỗi Cảm Biến)")
 
 # --- HÀM GỬI EMAIL ---
 def send_email_alert(sender_mail, app_password, receiver_mail, vpd, status, temp, humi):
@@ -75,17 +75,17 @@ def process_data(file):
             
             if col == 'temp':
                 df.loc[df[col] > 100, col] = df[col] / 10 
-                # ĐÃ NỚI LỎNG: Nâng lên 60 độ để không mất dữ liệu của trạm nóng
-                df.loc[(df[col] < 5) | (df[col] > 60), col] = np.nan
+                # CHỐT HẠ: Vượt 45 độ là rác, xóa!
+                df.loc[(df[col] < 5) | (df[col] > 45), col] = np.nan
             
             if col == 'humi':
                 df.loc[(df[col] < 10) | (df[col] > 100), col] = np.nan
     
     df = df.dropna(subset=['temp', 'humi']).copy()
     
-    # LỌC CỘT ĐÌNH: Chỉ xóa nếu nhiệt độ vọt > 15 độ một cách phi lý
+    # Xóa nhiễu nếu nhiệt độ giật cục quá 10 độ
     if len(df) > 1:
-        df = df[df['temp'].diff().abs() < 15] 
+        df = df[df['temp'].diff().abs() < 10] 
         
     if not df.empty: 
         df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
@@ -177,6 +177,8 @@ if uploaded_file:
                 use_container_width=True
             )
         else:
-            st.error("🚨 Không có dữ liệu hợp lệ. Hãy thử chọn Trạm khác.")
+            # ĐÃ CẬP NHẬT LỜI CẢNH BÁO CHO RÕ RÀNG Ở ĐÂY
+            st.error("🚨 Không có dữ liệu hợp lệ. TOÀN BỘ dữ liệu của Trạm này trong khoảng thời gian đã chọn đều bị lỗi cảm biến (Nhiệt độ đo được > 45°C).")
+            st.warning("👉 Cách khắc phục: Vui lòng đổi sang chọn Trạm khác (VD: Trạm 1, 2) ở thanh bên trái để xem dữ liệu bình thường.")
 else:
     st.info("👈 Hãy tải file JSON để bắt đầu.")
