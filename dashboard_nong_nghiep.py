@@ -43,16 +43,16 @@ def calculate_vpd(temp, humi):
     vpair = vpsat * (humi / 100)
     return round(vpsat - vpair, 2)
 
-def get_greenhouse_advice(vpd, stage, ss_duoi, ss_tren):
+def get_greenhouse_advice(vpd, stage, safe_min, safe_max):
     if pd.isna(vpd): return "N/A", "Chờ dữ liệu...", "#808080"
     if "Cây con" in stage: i_min, i_max = 0.4, 0.8
     elif "Sinh trưởng" in stage: i_min, i_max = 0.8, 1.2
     else: i_min, i_max = 1.2, 1.5
     
-    # --- Tính ngưỡng dựa trên 2 thanh sai số tuỳ chỉnh ---
-    if vpd < round(i_min - ss_duoi, 2): return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
+    # --- Đánh giá dựa trên Khoảng an toàn chốt từ thanh Range Slider ---
+    if vpd < safe_min: return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
     if i_min <= vpd <= i_max: return "🟢 LÝ TƯỞNG", "Cây phát triển tốt.", "#00C851"
-    if vpd > round(i_max + ss_tren, 2): return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
+    if vpd > safe_max: return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
     return "🟡 HƠI LỆCH", "Cần điều chỉnh nhẹ.", "#FFA500"
 
 # --- XỬ LÝ DỮ LIỆU ---
@@ -123,19 +123,30 @@ if uploaded_file:
         sel_stt = st.sidebar.selectbox("📍 Chọn Trạm (STT):", stt_list)
         if sel_stt != "Tất cả": df_work = df_work[df_work['STT'] == sel_stt]
 
-        # --- 2 THANH KÉO TUỲ CHỈNH SAI SỐ RIÊNG BIỆT ---
+        # --- 1 THANH KÉO (RANGE SLIDER) CÓ 2 ĐẦU ---
         st.sidebar.divider()
-        st.sidebar.markdown("**🎚️ Chỉnh sai số cảnh báo**")
-        sai_so_duoi = st.sidebar.slider("Sai số cận dưới (trừ hao):", min_value=0.0, max_value=0.5, value=0.2, step=0.1)
-        sai_so_tren = st.sidebar.slider("Sai số cận trên (cộng thêm):", min_value=0.0, max_value=0.5, value=0.3, step=0.1)
+        
+        # Mặc định theo giai đoạn để thanh kéo tự động nảy số chuẩn
+        if "Cây con" in growth_stage: def_val = (0.2, 1.1)
+        elif "Sinh trưởng" in growth_stage: def_val = (0.5, 1.5)
+        else: def_val = (0.9, 1.8)
+
+        safe_range = st.sidebar.slider(
+            "🎚️ Chỉnh khoảng an toàn VPD",
+            min_value=0.0,
+            max_value=3.0,
+            value=def_val,
+            step=0.1
+        )
+        safe_min, safe_max = safe_range
 
         # --- HIỂN THỊ DỮ LIỆU ---
         df_valid = df_work.dropna(subset=['VPD'])
         if not df_valid.empty:
             last = df_valid.iloc[-1]
             
-            # Đẩy 2 biến sai số vào hàm để đánh giá
-            status, advice, color = get_greenhouse_advice(last['VPD'], growth_stage, sai_so_duoi, sai_so_tren)
+            # Đẩy min/max của khoảng an toàn vào hàm để đánh giá trạng thái
+            status, advice, color = get_greenhouse_advice(last['VPD'], growth_stage, safe_min, safe_max)
             
             st.subheader("📍 Trạng thái trạm đo")
             m1, m2, m3 = st.columns([1, 1.2, 1.8])
@@ -165,12 +176,8 @@ if uploaded_file:
             
             # --- PHẦN NHUỘM MÀU BẢNG DỮ LIỆU ---
             def highlight_alert(row):
-                if "Cây con" in growth_stage: i_min, i_max = 0.4, 0.8
-                elif "Sinh trưởng" in growth_stage: i_min, i_max = 0.8, 1.2
-                else: i_min, i_max = 1.2, 1.5
-                
-                # Áp dụng 2 sai số tuỳ chỉnh vào bảng
-                if row['VPD'] < round(i_min - sai_so_duoi, 2) or row['VPD'] > round(i_max + sai_so_tren, 2):
+                # Báo đỏ nếu văng khỏi dải Range Slider
+                if row['VPD'] < safe_min or row['VPD'] > safe_max:
                     return ['background-color: #FFC7CE; color: #9C0006; font-weight: bold'] * len(row)
                 return [''] * len(row)
 
