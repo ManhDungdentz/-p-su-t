@@ -43,16 +43,16 @@ def calculate_vpd(temp, humi):
     vpair = vpsat * (humi / 100)
     return round(vpsat - vpair, 2)
 
-def get_greenhouse_advice(vpd, stage, sai_so):
+def get_greenhouse_advice(vpd, stage, ss_duoi, ss_tren):
     if pd.isna(vpd): return "N/A", "Chờ dữ liệu...", "#808080"
     if "Cây con" in stage: i_min, i_max = 0.4, 0.8
     elif "Sinh trưởng" in stage: i_min, i_max = 0.8, 1.2
     else: i_min, i_max = 1.2, 1.5
     
-    # --- Tính ngưỡng dựa trên sai số tuỳ chỉnh ---
-    if vpd < round(i_min - sai_so, 2): return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
+    # --- Tính ngưỡng dựa trên 2 thanh sai số tuỳ chỉnh ---
+    if vpd < round(i_min - ss_duoi, 2): return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
     if i_min <= vpd <= i_max: return "🟢 LÝ TƯỞNG", "Cây phát triển tốt.", "#00C851"
-    if vpd > round(i_max + sai_so, 2): return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
+    if vpd > round(i_max + ss_tren, 2): return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
     return "🟡 HƠI LỆCH", "Cần điều chỉnh nhẹ.", "#FFA500"
 
 # --- XỬ LÝ DỮ LIỆU ---
@@ -123,17 +123,19 @@ if uploaded_file:
         sel_stt = st.sidebar.selectbox("📍 Chọn Trạm (STT):", stt_list)
         if sel_stt != "Tất cả": df_work = df_work[df_work['STT'] == sel_stt]
 
-        # --- THANH KÉO TUỲ CHỈNH SAI SỐ ---
+        # --- 2 THANH KÉO TUỲ CHỈNH SAI SỐ RIÊNG BIỆT ---
         st.sidebar.divider()
-        sai_so_vpd = st.sidebar.slider("🎚️ Chỉnh sai số cảnh báo (±)", min_value=0.1, max_value=0.5, value=0.3, step=0.1)
+        st.sidebar.markdown("**🎚️ Chỉnh sai số cảnh báo**")
+        sai_so_duoi = st.sidebar.slider("Sai số cận dưới (trừ hao):", min_value=0.0, max_value=0.5, value=0.2, step=0.1)
+        sai_so_tren = st.sidebar.slider("Sai số cận trên (cộng thêm):", min_value=0.0, max_value=0.5, value=0.3, step=0.1)
 
         # --- HIỂN THỊ DỮ LIỆU ---
         df_valid = df_work.dropna(subset=['VPD'])
         if not df_valid.empty:
             last = df_valid.iloc[-1]
             
-            # Đẩy biến sai_so_vpd vào hàm để đánh giá
-            status, advice, color = get_greenhouse_advice(last['VPD'], growth_stage, sai_so_vpd)
+            # Đẩy 2 biến sai số vào hàm để đánh giá
+            status, advice, color = get_greenhouse_advice(last['VPD'], growth_stage, sai_so_duoi, sai_so_tren)
             
             st.subheader("📍 Trạng thái trạm đo")
             m1, m2, m3 = st.columns([1, 1.2, 1.8])
@@ -167,8 +169,8 @@ if uploaded_file:
                 elif "Sinh trưởng" in growth_stage: i_min, i_max = 0.8, 1.2
                 else: i_min, i_max = 1.2, 1.5
                 
-                # Áp dụng sai số tuỳ chỉnh vào bảng
-                if row['VPD'] < round(i_min - sai_so_vpd, 2) or row['VPD'] > round(i_max + sai_so_vpd, 2):
+                # Áp dụng 2 sai số tuỳ chỉnh vào bảng
+                if row['VPD'] < round(i_min - sai_so_duoi, 2) or row['VPD'] > round(i_max + sai_so_tren, 2):
                     return ['background-color: #FFC7CE; color: #9C0006; font-weight: bold'] * len(row)
                 return [''] * len(row)
 
