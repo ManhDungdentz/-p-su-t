@@ -49,7 +49,8 @@ def get_greenhouse_advice(vpd, stage):
     elif "Sinh trưởng" in stage: i_min, i_max = 0.8, 1.2
     else: i_min, i_max = 1.2, 1.5
     
-    if vpd < i_min - 0.2: return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
+    # --- Áp dụng sai số chuẩn: -0.3 cho cận dưới và +0.3 cho cận trên ---
+    if vpd < i_min - 0.3: return "🔴 QUÁ THẤP", "Nguy cơ nấm bệnh!", "#FF4B4B"
     if i_min <= vpd <= i_max: return "🟢 LÝ TƯỞNG", "Cây phát triển tốt.", "#00C851"
     if vpd > i_max + 0.3: return "🔴 QUÁ CAO", "Stress nhiệt nặng!", "#8B0000"
     return "🟡 HƠI LỆCH", "Cần điều chỉnh nhẹ.", "#FFA500"
@@ -80,7 +81,6 @@ def process_data(file):
     df = df.dropna(subset=['temp', 'humi']).copy()
     
     # --- FIX LỖI "LÊN CAO ĐỘT NGỘT" ---
-    # Đập phẳng các gai nhiễu nhảy vọt mà không làm hỏng dữ liệu chuẩn xung quanh
     if len(df) > 2:
         df['temp'] = df['temp'].rolling(window=3, center=True, min_periods=1).median()
         df['humi'] = df['humi'].rolling(window=3, center=True, min_periods=1).median()
@@ -157,13 +157,12 @@ if uploaded_file:
             
             # --- PHẦN NHUỘM MÀU BẢNG DỮ LIỆU ---
             def highlight_alert(row):
-                # Lấy ngưỡng dựa trên giai đoạn cây
                 if "Cây con" in growth_stage: i_min, i_max = 0.4, 0.8
                 elif "Sinh trưởng" in growth_stage: i_min, i_max = 0.8, 1.2
                 else: i_min, i_max = 1.2, 1.5
                 
-                # Nếu VPD nằm ngoài ngưỡng an toàn (có trừ hao nhẹ như hàm advice)
-                if row['VPD'] < (i_min - 0.2) or row['VPD'] > (i_max + 0.3):
+                # --- Áp dụng sai số chuẩn: -0.3 cho cận dưới và +0.3 cho cận trên ---
+                if row['VPD'] < (i_min - 0.3) or row['VPD'] > (i_max + 0.3):
                     return ['background-color: #FFC7CE; color: #9C0006; font-weight: bold'] * len(row)
                 return [''] * len(row)
 
