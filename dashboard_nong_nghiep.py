@@ -221,16 +221,18 @@ def process_data(file):
     df['temp'] = np.nan
     df['humi'] = np.nan
 
-    # FIX: humiKK = nhiệt độ thực / tempKK = độ ẩm thực (sensor bị đấu ngược)
+    # Trạm 5: sensor bị đấu ngược tên cột
+    # tempKK thực ra chứa giá trị độ ẩm (~33–50%)
+    # humiKK thực ra chứa giá trị nhiệt độ (~35–47°C)
     if 'humiKK' in df.columns:
         mask = df['humiKK'].notna()
         val  = pd.to_numeric(df.loc[mask, 'humiKK'], errors='coerce')
-        df.loc[mask, 'temp'] = val
+        df.loc[mask, 'temp'] = val   # humiKK → nhiệt độ thực
 
     if 'tempKK' in df.columns:
         mask = df['tempKK'].notna()
         val  = pd.to_numeric(df.loc[mask, 'tempKK'], errors='coerce')
-        df.loc[mask, 'humi'] = val
+        df.loc[mask, 'humi'] = val   # tempKK → độ ẩm thực
 
     # Fallback cột Nhiệt Độ / Độ ẩm (chia 10)
     for col_name in ['Nhiệt Độ', 'Nhiệt độ']:
