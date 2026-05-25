@@ -100,7 +100,7 @@ def get_greenhouse_advice(vpd, crop):
         return "🟡 CẢNH BÁO",  c["note_warn"], "#FFA500"
     return "🔴 QUÁ CAO",       c["note_high"], "#FF4B4B"
 
-# --- XỬ LÝ DỮ LIỆU & KHỬ NHIỄU ---
+# --- XỬ LÝ DỮ LIỆU & ĐẢO NGƯỢC THÔNG SỐ THEO YÊU CẦU ---
 def process_data(file):
     try:
         df = pd.read_json(file)
@@ -117,29 +117,22 @@ def process_data(file):
     df['temp'] = np.nan
     df['humi'] = np.nan
 
-    if 'tempKK' in df.columns:
-        mask = df['tempKK'].notna()
-        val = pd.to_numeric(df.loc[mask, 'tempKK'], errors='coerce')
-        df.loc[mask, 'temp'] = np.where(val > 45, (val - 32) * 5 / 9, val)
-
+    # ĐẢO NGƯỢC: Nhiệt độ lấy từ humiKK, Độ ẩm lấy từ tempKK
     if 'humiKK' in df.columns:
         mask = df['humiKK'].notna()
-        df.loc[mask, 'humi'] = pd.to_numeric(df.loc[mask, 'humiKK'], errors='coerce')
+        df.loc[mask, 'temp'] = pd.to_numeric(df.loc[mask, 'humiKK'], errors='coerce')
 
-    if 'Nhiệt Độ' in df.columns:
-        mask = df['Nhiệt Độ'].notna() & df['temp'].isna()
-        val = pd.to_numeric(df.loc[mask, 'Nhiệt Độ'], errors='coerce')
-        df.loc[mask, 'temp'] = val / 10
+    if 'tempKK' in df.columns:
+        mask = df['tempKK'].notna()
+        df.loc[mask, 'humi'] = pd.to_numeric(df.loc[mask, 'tempKK'], errors='coerce')
 
-    if 'Độ ẩm' in df.columns:
-        mask = df['Độ ẩm'].notna() & df['humi'].isna()
-        val = pd.to_numeric(df.loc[mask, 'Độ ẩm'], errors='coerce')
-        df.loc[mask, 'humi'] = val / 10
-
+    # Chặn rác vật lý
     df.loc[(df['temp'] < 5) | (df['temp'] > 55), 'temp'] = np.nan
     df.loc[(df['humi'] < 5) | (df['humi'] > 100), 'humi'] = np.nan
 
     df = df.dropna(subset=['temp', 'humi']).copy()
+    
+    # Khử nhiễu cục bộ
     if len(df) > 5:
         for c in ['temp', 'humi']:
             diff = df[c].diff().abs()
@@ -150,7 +143,7 @@ def process_data(file):
         df['VPD'] = df.apply(lambda r: calculate_vpd(r['temp'], r['humi']), axis=1)
     return df
 
-# --- HÀM VẼ BIỂU ĐỒ (GIỮ NGUYÊN DẢI MÀU CỦA ÔNG) ---
+# --- HÀM VẼ BIỂU ĐỒ (DẢI MÀU GỐC) ---
 def draw_chart(df_valid, c_info, smooth=True):
     df_chart = df_valid.copy()
     x_col = 'Thời gian'
@@ -173,15 +166,15 @@ def draw_chart(df_valid, c_info, smooth=True):
     fig.add_trace(go.Scatter(x=df_chart[x_col], y=df_chart['VPD'].round(2),
                              name="VPD (kPa)", line=dict(color='#2E7D32', width=2.5)), row=1, col=1)
 
-    # --- CÁC DẢI MÀU PHÂN VÙNG ---
+    # DẢI MÀU PHÂN VÙNG
     vpd_max = float(max(df_chart['VPD'].max() * 1.15, 3.5)) if not df_chart.empty else 3.5
     c_lo, c_imin, c_imax, c_wmax = c_info["low"], c_info["ideal_min"], c_info["ideal_max"], c_info["warn_max"]
     
-    fig.add_hrect(y0=0,      y1=c_lo,   fillcolor="rgba(30, 144, 255, 0.35)", line_width=0, row=1, col=1) # Quá thấp
-    fig.add_hrect(y0=c_lo,   y1=c_imin, fillcolor="rgba(255, 165, 0, 0.35)",  line_width=0, row=1, col=1) # Cảnh báo thấp
-    fig.add_hrect(y0=c_imin, y1=c_imax, fillcolor="rgba(0, 200, 81, 0.35)",   line_width=0, row=1, col=1) # Lý tưởng
-    fig.add_hrect(y0=c_imax, y1=c_wmax, fillcolor="rgba(255, 165, 0, 0.35)",  line_width=0, row=1, col=1) # Cảnh báo cao
-    fig.add_hrect(y0=c_wmax, y1=vpd_max, fillcolor="rgba(255, 75, 75, 0.35)",  line_width=0, row=1, col=1) # Quá cao
+    fig.add_hrect(y0=0,      y1=c_lo,   fillcolor="rgba(30, 144, 255, 0.35)", line_width=0, row=1, col=1) 
+    fig.add_hrect(y0=c_lo,   y1=c_imin, fillcolor="rgba(255, 165, 0, 0.35)",  line_width=0, row=1, col=1) 
+    fig.add_hrect(y0=c_imin, y1=c_imax, fillcolor="rgba(0, 200, 81, 0.35)",   line_width=0, row=1, col=1) 
+    fig.add_hrect(y0=c_imax, y1=c_wmax, fillcolor="rgba(255, 165, 0, 0.35)",  line_width=0, row=1, col=1) 
+    fig.add_hrect(y0=c_wmax, y1=vpd_max, fillcolor="rgba(255, 75, 75, 0.35)",  line_width=0, row=1, col=1) 
 
     fig.add_trace(go.Scatter(x=df_chart[x_col], y=df_chart['temp'].round(1),
                              name="Nhiệt độ (°C)", line=dict(color='#E53935')), row=2, col=1)
@@ -266,11 +259,9 @@ if mode == "📂 Xem file JSON":
                 show_metrics(last, status, advice, color, u_mail, u_pass, t_mail, selected_crop, key_suffix="file")
                 st.plotly_chart(draw_chart(df_valid, c_info), use_container_width=True)
                 
-                # Bảng thống kê (Giữ nguyên)
                 st.subheader("📋 Thống kê")
                 st.table(df_valid[['temp', 'humi', 'VPD']].agg(['max', 'min', 'mean']).round(2))
 
-                # Highlight bảng (Giữ nguyên)
                 def highlight_alert(row):
                     if row['VPD'] > c_info['warn_max']: return ['background-color: #FFC7CE'] * len(row)
                     if row['VPD'] > c_info['ideal_max']: return ['background-color: #FFE0B2'] * len(row)
@@ -281,22 +272,22 @@ if mode == "📂 Xem file JSON":
                              .sort_values('Thời gian', ascending=False)
                              .style.apply(highlight_alert, axis=1))
                 st.dataframe(styled_df, use_container_width=True)
+            else:
+                st.error("🚨 Không có trạm nào chứa dữ liệu độ ẩm/nhiệt độ.")
         else:
-            st.error("🚨 File không hợp lệ.")
+            st.error("🚨 File không hợp lệ hoặc không có dữ liệu.")
     else:
         st.info("👈 Vui lòng tải file JSON ở sidebar.")
 
 else:
-    # --- CHẾ ĐỘ REALTIME (FIX DUPLICATE KEY + GIỮ NGUYÊN GIAO DIỆN) ---
+    # --- CHẾ ĐỘ REALTIME ---
     if 'rt_history' not in st.session_state:
         st.session_state.rt_history = pd.DataFrame(columns=['Thời gian', 'temp', 'humi', 'VPD', 'STT'])
-        # Tạo dữ liệu mồi
         t, h = 28.0, 75.0
         vpd = calculate_vpd(t, h)
         st.session_state.rt_history.loc[0] = [datetime.now().replace(microsecond=0), t, h, vpd, 'SIM-01']
 
     if run_realtime:
-        # Sinh dữ liệu mới
         last_t = st.session_state.rt_history.iloc[-1]['temp']
         last_h = st.session_state.rt_history.iloc[-1]['humi']
         new_temp = round(np.clip(last_t + np.random.uniform(-0.5, 0.5), 15, 45), 1)
@@ -309,7 +300,6 @@ else:
         }])
         st.session_state.rt_history = pd.concat([st.session_state.rt_history, new_row], ignore_index=True).tail(100)
 
-    # Hiển thị UI Realtime
     last_rt = st.session_state.rt_history.iloc[-1]
     status_rt, advice_rt, color_rt = get_greenhouse_advice(last_rt['VPD'], selected_crop)
     
@@ -322,8 +312,8 @@ else:
     if run_realtime:
         timer_ph = st.empty()
         for i in range(60, 0, -1):
-            timer_ph.caption(f"🔄 Đang đợi dữ liệu mới... cập nhật sau {i} giây.")
+            timer_ph.caption(f"🔄 Cập nhật tiếp theo sau {i} giây...")
             time.sleep(1)
-        st.rerun() # Chạy lại toàn bộ để làm sạch Widget ID
+        st.rerun() 
     else:
         st.warning("⏸️ Mô phỏng đang tạm dừng.")
